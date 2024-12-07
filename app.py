@@ -41,18 +41,21 @@ def get_grade_level_info(grade: int) -> Tuple[str, str]:
         return 'High', GRADE_INDICATORS['High']
 
 def load_api_key():
-    """Load the Anthropic API key from the environment."""
+    """Load the Anthropic API key from Streamlit secrets or environment."""
     try:
-        load_dotenv()
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            st.error("Anthropic API key is not set. Please configure the .env file or use Streamlit secrets.")
-            st.stop()
-        logging.info("API key loaded successfully")
+        # Try to get from streamlit secrets first
+        api_key = st.secrets.get("ANTHROPIC_API_KEY", None)
         
-        if not api_key.startswith("sk-ant-"):
-            logging.warning("API key format may be incorrect. Should start with 'sk-ant-'")
+        # Fallback to environment variables for local development
+        if not api_key:
+            load_dotenv()
+            api_key = os.getenv("ANTHROPIC_API_KEY")
             
+        if not api_key:
+            st.error("Anthropic API key is not set. Please configure secrets or .env file.")
+            st.stop()
+            
+        logging.info("API key loaded successfully")
         client = anthropic.Anthropic(api_key=api_key)
         logging.info("Anthropic client created successfully")
         return client
