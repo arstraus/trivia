@@ -40,4 +40,5 @@ venv.bak/
 
 # Operating System
 .DS_Store
-Thumbs.db
+Thumbs.db.streamlit/secrets.toml
+.env
