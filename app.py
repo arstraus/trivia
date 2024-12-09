@@ -4,6 +4,7 @@ import random
 import time
 import logging
 from typing import Tuple, Optional
+from auth import init_auth_state, login_page, show_logout_button
 
 from dotenv import load_dotenv
 import anthropic
@@ -359,11 +360,23 @@ def display_grade_level_indicator():
 def main():
     """Main application function."""
     try:
+        # Initialize authentication state
+        init_auth_state()
+        
+        # Show login page if not authenticated
+        if not st.session_state.authenticated:
+            login_page()
+            return
+            
+        # Show logout button in sidebar for authenticated users
+        show_logout_button()
+
+        # Original app content starts here
         st.title("🧠 The STRAUS Math and Science Trivia Game")
         logging.info("Starting application")
-
         load_api_key()
         initialize_session_state()
+
         # Add grade level selector in sidebar with visual feedback
         st.sidebar.header("📚 Settings")
         grade_level = st.sidebar.slider(
