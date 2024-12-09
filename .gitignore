@@ -42,3 +42,4 @@ venv.bak/
 .DS_Store
 Thumbs.db.streamlit/secrets.toml
 .env
+generate_credentials.py
