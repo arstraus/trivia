@@ -5,16 +5,75 @@ import time
 import logging
 from typing import Tuple, Optional, Dict, List
 from auth import init_auth_state, login_page, show_logout_button
-
+import streamlit as st
+from datetime import datetime
 from dotenv import load_dotenv
 import anthropic
-import streamlit as st
 
 # Configure logging with more detail
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
+
+class GameTheme:
+    """Theme configuration for the game"""
+    COLORS = {
+        'primary': '#1E88E5',       # Blue
+        'success': '#4CAF50',       # Green
+        'warning': '#FFC107',       # Amber
+        'error': '#FF5252',         # Red
+        'info': '#2196F3',         # Light Blue
+        'background': '#F8F9FA'     # Light Gray
+    }
+    
+    CUSTOM_CSS = """
+        <style>
+            .stApp {
+                background-color: #F8F9FA;
+            }
+            
+            .main-header {
+                font-size: 2.5rem;
+                color: #1E88E5;
+                text-align: center;
+                margin-bottom: 2rem;
+            }
+            
+            .category-badge {
+                background-color: #E3F2FD;
+                padding: 0.5rem 1rem;
+                border-radius: 1rem;
+                color: #1E88E5;
+                font-weight: bold;
+            }
+            
+            .question-card {
+                background-color: white;
+                padding: 2rem;
+                border-radius: 1rem;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                margin: 1rem 0;
+            }
+            
+            .stats-card {
+                background-color: white;
+                padding: 1rem;
+                border-radius: 0.5rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                margin-bottom: 1rem;
+            }
+            
+            .option-button {
+                transition: all 0.3s;
+            }
+            
+            .option-button:hover {
+                background-color: #E3F2FD;
+                cursor: pointer;
+            }
+        </style>
+    """
 
 class GameConfig:
     CATEGORIES: List[str] = [
@@ -45,7 +104,6 @@ class AnthropicClient:
     def create() -> anthropic.Anthropic:
         """Create and return an Anthropic client instance."""
         try:
-            # Try to get from streamlit secrets first
             api_key = st.secrets.get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
             if not api_key:
                 st.error("Anthropic API key is not set. Please configure secrets or .env file.")
@@ -233,53 +291,281 @@ class QuestionGenerator:
 
 class GameUI:
     @staticmethod
-    def display_grade_level_indicator() -> None:
-        """Display visual indicator for current grade level."""
-        try:
-            grade = st.session_state['grade_level']
-            school_level, emoji = get_grade_level_info(grade)
+    def setup_page():
+        """Configure the basic page layout and styling"""
+        st.set_page_config(
+            page_title="STRAUS Math & Science Trivia",
+            page_icon="🧠",
+            layout="wide",
+            initial_sidebar_state="expanded"
+        )
+        st.markdown(GameTheme.CUSTOM_CSS, unsafe_allow_html=True)
+
+    @staticmethod
+    def display_header():
+        """Display the main game header"""
+        st.markdown(
+            '<h1 class="main-header">🧠 STRAUS Math & Science Trivia</h1>',
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<p style='text-align: center; color: #666;'>Test your knowledge across various STEM subjects!</p>",
+            unsafe_allow_html=True
+        )
+
+    @staticmethod
+    def display_stats_dashboard():
+        """Display game statistics in a dashboard layout"""
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown(
+                f"""
+                <div class="stats-card">
+                    <h3 style="margin:0; color: #1E88E5;">Score</h3>
+                    <h2 style="margin:0;">{st.session_state['score']}</h2>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        
+        with col2:
+            if st.session_state['total_questions'] > 0:
+                accuracy = (st.session_state['score'] / st.session_state['total_questions']) * 100
+            else:
+                accuracy = 0
+            st.markdown(
+                f"""
+                <div class="stats-card">
+                    <h3 style="margin:0; color: #1E88E5;">Accuracy</h3>
+                    <h2 style="margin:0;">{accuracy:.1f}%</h2>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("### Current Level:")
-            col1, col2 = st.sidebar.columns([1, 2])
-            with col1:
-                st.markdown(f"### {emoji}")
-            with col2:
-                st.markdown(f"**Grade {grade}**  \n{school_level} School")
-        except Exception as e:
-            logging.error(f"Error displaying grade level: {str(e)}")
-            st.error("Error displaying grade level")
+        with col3:
+            if st.session_state['total_attempts'] > 0 and st.session_state['total_questions'] > 0:
+                avg_attempts = st.session_state['total_attempts'] / st.session_state['total_questions']
+            else:
+                avg_attempts = 0
+            st.markdown(
+                f"""
+                <div class="stats-card">
+                    <h3 style="margin:0; color: #1E88E5;">Avg Attempts</h3>
+                    <h2 style="margin:0;">{avg_attempts:.1f}</h2>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
     @staticmethod
-    def display_scoreboard() -> None:
-        """Display the scoreboard in the sidebar."""
-        st.sidebar.header("🎯 Your Score")
-        st.sidebar.write(f"**Correct Answers:** {st.session_state['score']}")
-        st.sidebar.write(f"**Total Questions:** {st.session_state['total_questions']}")
-        if st.session_state['total_attempts'] > 0 and st.session_state['total_questions'] > 0:
-            avg_attempts = st.session_state['total_attempts'] / st.session_state['total_questions']
-            st.sidebar.write(f"**Average Attempts:** {avg_attempts:.1f}")
+    def display_question(question: str, category: str):
+        """Display the current question in a card layout"""
+        st.markdown(
+            f"""
+            <div class="question-card">
+                <span class="category-badge">{category}</span>
+                <h2 style="margin-top: 1rem;">{question}</h2>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     @staticmethod
-    def handle_end_game() -> None:
+    def display_answer_options(options: list, key_suffix: str):
+        """Display answer options in an improved layout"""
+        selected_option = None
+        
+        # Create two columns for options
+        col1, col2 = st.columns(2)
+        
+        # Display options A and B in first column
+        with col1:
+            for option in options[:2]:
+                if st.button(
+                    option,
+                    key=f"{option}_{key_suffix}",
+                    use_container_width=True,
+                    type="secondary"
+                ):
+                    selected_option = option
+        
+        # Display options C and D in second column
+        with col2:
+            for option in options[2:]:
+                if st.button(
+                    option,
+                    key=f"{option}_{key_suffix}",
+                    use_container_width=True,
+                    type="secondary"
+                ):
+                    selected_option = option
+        
+        return selected_option
+
+    @staticmethod
+    def display_grade_selector():
+        """Display an improved grade level selector"""
+        st.sidebar.markdown("### 📚 Grade Level")
+        grade_level = st.sidebar.select_slider(
+            "Choose your grade:",
+            options=list(range(1, 13)),
+            value=st.session_state.get('grade_level', 4),
+            format_func=lambda x: f"Grade {x}",
+            help="Slide to adjust the difficulty level of questions"
+        )
+        
+        # Visual indicator of difficulty
+        level_text = "Elementary" if grade_level <= 5 else "Middle" if grade_level <= 8 else "High"
+        level_emoji = "🎈" if grade_level <= 5 else "🌟" if grade_level <= 8 else "🎓"
+        
+        st.sidebar.markdown(
+            f"""
+            <div style='text-align: center; padding: 1rem; background-color: white; border-radius: 0.5rem;'>
+                <div style='font-size: 2rem;'>{level_emoji}</div>
+                <div style='font-weight: bold; color: #1E88E5;'>{level_text} School</div>
+                <div style='color: #666;'>Grade {grade_level}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        return grade_level
+
+    @staticmethod
+    def display_game_controls():
+        """Display game control buttons"""
+        col1, col2, space, col3 = st.columns([1, 1, 2, 1])
+        
+        with col1:
+            next_question = st.button(
+                "Next Question ➡️",
+                type="primary",
+                use_container_width=True
+            )
+            
+        with col2:
+            retry_question = st.button(
+                "Retry Question 🔄",
+                type="secondary",
+                use_container_width=True
+            )
+            
+        with col3:
+            end_game = st.button(
+                "End Game ⏹️",
+                type="secondary",
+                use_container_width=True
+            )
+            
+        return next_question, retry_question, end_game
+
+    @staticmethod
+    def display_explanation(explanation: str):
+        """Display the answer explanation in a card"""
+        st.markdown(
+            f"""
+            <div style='background-color: #E3F2FD; padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;'>
+                <h3 style='color: #1E88E5; margin: 0;'>Explanation</h3>
+                <p style='margin: 0.5rem 0 0 0;'>{explanation}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    @staticmethod
+    def handle_end_game():
         """Display final score and option to restart the game."""
         try:
-            st.write("## Game Over 🎮")
-            st.write(f"🎯 You answered **{st.session_state['score']}** out of "
-                    f"**{st.session_state['total_questions']}** questions correctly.")
+            st.markdown(
+                """
+                <div class="question-card">
+                    <h2 style="color: #1E88E5; margin-bottom: 1rem;">🎮 Game Over!</h2>
+                    <div style="margin-bottom: 1rem;">
+                """,
+                unsafe_allow_html=True
+            )
             
-            if st.session_state['total_questions'] > 0:
-                avg_attempts = st.session_state['total_attempts'] / st.session_state['total_questions']
-                st.write(f"📊 Average attempts per question: **{avg_attempts:.1f}**")
+            # Calculate statistics
+            total_questions = st.session_state['total_questions']
+            correct_answers = st.session_state['score']
             
-            st.write("Thank you for playing the STRAUS Math and Science Trivia Game! 👏")
-
-            if st.button("Restart Game", key="restart_game_button"):
+            if total_questions > 0:
+                accuracy = (correct_answers / total_questions) * 100
+                avg_attempts = st.session_state['total_attempts'] / total_questions
+            else:
+                accuracy = 0
+                avg_attempts = 0
+                
+            # Display final statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown(
+                    f"""
+                    <div class="stats-card">
+                        <h3 style="margin:0; color: #1E88E5;">Total Questions</h3>
+                        <h2 style="margin:0;">{total_questions}</h2>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            
+            with col2:
+                st.markdown(
+                    f"""
+                    <div class="stats-card">
+                        <h3 style="margin:0; color: #1E88E5;">Final Score</h3>
+                        <h2 style="margin:0;">{correct_answers}</h2>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
+            with col3:
+                st.markdown(
+                    f"""
+                    <div class="stats-card">
+                        <h3 style="margin:0; color: #1E88E5;">Accuracy</h3>
+                        <h2 style="margin:0;">{accuracy:.1f}%</h2>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
+            # Display average attempts
+            st.markdown(
+                f"""
+                <div style='text-align: center; margin-top: 1rem;'>
+                    <p style='color: #666;'>Average attempts per question: <strong>{avg_attempts:.1f}</strong></p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            # Thank you message
+            st.markdown(
+                """
+                <div style='text-align: center; margin: 2rem 0;'>
+                    <p style='color: #1E88E5; font-size: 1.2rem;'>
+                        Thank you for playing the STRAUS Math and Science Trivia Game! 👏
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            # Restart button
+            if st.button("Play Again 🔄", type="primary", use_container_width=True):
                 SessionState.reset_game()
                 st.rerun()
+                
+            st.markdown("</div></div>", unsafe_allow_html=True)
+            
         except Exception as e:
             logging.error(f"Error in handle_end_game: {str(e)}")
             st.error("Error handling game end")
+
 
 class GameLogic:
     def __init__(self, question_generator: QuestionGenerator):
@@ -352,6 +638,7 @@ class GameLogic:
             logging.error(f"Error in submit_answer: {str(e)}")
             st.error("Error processing answer")
 
+
 def main():
     """Main application function."""
     try:
@@ -362,84 +649,100 @@ def main():
             login_page()
             return
             
+        # Setup page configuration and theme
+        GameUI.setup_page()
         show_logout_button()
         
-        st.title("🧠 The STRAUS Math and Science Trivia Game")
+        # Display main header
+        GameUI.display_header()
+        
         logging.info("Starting application")
         
+        # Initialize game components
         client = AnthropicClient.create()
         SessionState.initialize()
         question_generator = QuestionGenerator(client)
         game_logic = GameLogic(question_generator)
         
-        # Grade level selector in sidebar
-        st.sidebar.header("📚 Settings")
-        grade_level = st.sidebar.slider(
-            "Select Grade Level",
-            min_value=1,
-            max_value=12,
-            value=st.session_state['grade_level'],
-            step=1,
-            help="Select the grade level for the questions"
-        )
-        
-        # Update grade level if changed
-        if grade_level != st.session_state['grade_level']:
-            st.session_state['grade_level'] = grade_level
-            st.session_state['current_question'] = None
-            logging.info(f"Grade level changed to {grade_level}")
-        
-        # Display UI elements
-        GameUI.display_grade_level_indicator()
-        GameUI.display_scoreboard()
+        # Sidebar components
+        with st.sidebar:
+            # Grade level selector
+            grade_level = GameUI.display_grade_selector()
+            
+            # Update grade level if changed
+            if grade_level != st.session_state['grade_level']:
+                st.session_state['grade_level'] = grade_level
+                st.session_state['current_question'] = None
+                logging.info(f"Grade level changed to {grade_level}")
+            
+            st.markdown("---")
+            
+            # Display current session stats
+            GameUI.display_stats_dashboard()
 
-        # Handle top-level UI controls
-        col1, col2 = st.columns(2)
-        with col1:
-            next_question_clicked = st.button("Next Question", key="next_question_button")
-        with col2:
-            end_game_clicked = st.button("End Game", key="end_game_button")
-
-        # Handle game over state
-        if end_game_clicked:
-            st.session_state['game_over'] = True
-            logging.info("Game end requested")
-
+        # Handle game over state first
         if st.session_state.get('game_over', False):
             GameUI.handle_end_game()
             return
 
-        # Handle question generation and game flow
-        if next_question_clicked:
+        # Display game controls
+        next_question, retry_question, end_game = GameUI.display_game_controls()
+
+        # Handle control actions
+        if end_game:
+            st.session_state['game_over'] = True
+            logging.info("Game end requested")
+            GameUI.handle_end_game()
+            return
+
+        if next_question:
             logging.info("New question requested")
             game_logic.set_new_question()
 
+        if retry_question and not st.session_state['answered']:
+            logging.info("Question retry requested")
+            st.session_state['retry_mode'] = True
+
+        # Initial question generation
         if st.session_state['current_question'] is None and not st.session_state['loading_question']:
             logging.info("Initial question generation")
             game_logic.set_new_question()
 
         # Display current question and handle answers
         if st.session_state['current_question']:
-            st.header(f"Category: {st.session_state['category']}")
-            st.write(st.session_state['current_question'])
+            # Display the question in a card
+            GameUI.display_question(
+                st.session_state['current_question'],
+                st.session_state['category']
+            )
 
             if not st.session_state['answered'] and not st.session_state['loading_question']:
+                # Show attempts if in retry mode
                 if st.session_state['retry_mode']:
-                    st.write(f"Attempts so far: {st.session_state['current_attempts']}")
+                    st.markdown(
+                        f"<div style='color: #666;'>Attempts so far: {st.session_state['current_attempts']}</div>",
+                        unsafe_allow_html=True
+                    )
                 
-                selected_option = st.radio(
-                    "Choose your answer:", 
-                    st.session_state['options'], 
-                    key=f"options_radio_{st.session_state['current_attempts']}"
+                # Display answer options and handle selection
+                selected_option = GameUI.display_answer_options(
+                    st.session_state['options'],
+                    key_suffix=f"attempt_{st.session_state['current_attempts']}"
                 )
                 
-                if st.button("Submit Answer", key=f"submit_button_{st.session_state['current_attempts']}"):
+                # Process answer if selected
+                if selected_option:
                     logging.info("Answer submission attempted")
                     game_logic.submit_answer(selected_option)
+
+            # Show explanation after answering
+            if st.session_state['answered']:
+                GameUI.display_explanation(st.session_state['explanation'])
 
     except Exception as e:
         logging.error(f"Critical error in main function: {str(e)}")
         st.error("An unexpected error occurred in the application")
+
 
 if __name__ == "__main__":
     main()
