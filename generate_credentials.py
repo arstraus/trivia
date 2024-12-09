@@ -11,7 +11,7 @@ def generate_credentials(password: str) -> tuple[str, str]:
     ).hex()
     return password_hash, salt
 
-password = "coco14bug"
+password = ""
 password_hash, salt = generate_credentials(password)
 print(f"""
 [auth.credentials.admin]
