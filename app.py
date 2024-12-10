@@ -629,7 +629,6 @@ class GameLogic:
                     logging.info(f"Correct answer submitted after {st.session_state['current_attempts']} attempts")
                     st.session_state['answered'] = True
                     st.session_state['retry_mode'] = False
-                    st.info(f"**Explanation:** {st.session_state['explanation']}")
                 else:
                     st.error("❌ Incorrect! Try again!")
                     st.session_state['retry_mode'] = True
